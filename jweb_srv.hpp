@@ -47,6 +47,8 @@ namespace web_server_private {
 		socklen_t sin_len;
 		int32_t socket;
 		struct sockaddr_in addr;
+		std::string php_cgi_binary;
+		std::string php_cgi_path;
 	};
 
 	struct mt_args_t {
@@ -94,8 +96,7 @@ namespace web_server_private {
 	static const bool is_safe_path(const std::string& root,const std::string& s)  {
 		if (s.empty())
 			return false;
-	
-		//TODO : check nest level :)
+
 		if (s[0] == '.')
 			return false;
 		
@@ -180,6 +181,12 @@ namespace web_server_private {
 		return true;
 	}
 
+	//Just to get rid of warning:"deprecated conversion from string constant to ‘char*’ [-Wwrite-strings]"
+	static inline void put_env(const char* s) {
+		std::string tmp = std::string(s);
+		putenv((char*)&tmp[0]);
+	}
+
 	static parse_result_e parse_request(const std::string& root,web_server_private::client_session_ctx_t* cfg) {
 		char* ds;
 		std::vector<char> buffer;
@@ -202,6 +209,8 @@ namespace web_server_private {
 						}
 					}
 				}
+				//if (ret < sizeof(fetch))
+					//break;
 			} while (!done);
 		}
 #else
@@ -237,6 +246,8 @@ namespace web_server_private {
 #endif
 		//Handle more requests if you like....
 		char* s = strstr(ds,"GET /");
+ 
+
 		if (s) {
 			s += strlen("GET /");
 			if (s[1] != ' ') {
@@ -244,12 +255,48 @@ namespace web_server_private {
 				while (*p && *p != ' ')++p;
 				*p = '\0';
 				if ((strlen(s) != 0) && (*s != ' ')) {
-					if (!is_safe_path(root,std::string(s))) { 
+		
+					const ext_map_t* mtype = file_ext_map_to_media_type(s);
+					bool unsafe = false;
+					if (strcmp(mtype->extension,"php") == 0) {
+						if (cfg->php_cgi_binary.empty() || cfg->php_cgi_path.empty())
+							unsafe = true;
+						else {
+							if (!is_safe_path(root,std::string(s))) {
+								unsafe = true;
+							} else {
+								std::string path = root + "/" + std::string(s);
+								std::string arg = "SCRIPT_FILENAME=" + path;
+								if ((!file_exists(path)) || (!file_exists(cfg->php_cgi_path + "/" + cfg->php_cgi_binary)))
+									unsafe = true;
+								else {
+									{
+										char buf[128];
+										sprintf(buf,"HTTP/1.1 200 OK\nConnection: close\n");
+										send(cfg->socket,&buf,strlen(buf),0);
+									}
+									
+									put_env("GATEWAY_INTERFACE=CGI/1.1");
+									put_env(arg.c_str());
+									put_env("QUERY_STRING=");
+									put_env("REDIRECT_STATUS=true");
+									put_env("REQUEST_METHOD=GET");
+									put_env("SERVER_PROTOCOL=HTTP/1.1");
+									put_env("REMOTE_HOST=127.0.0.1");
+									dup2(cfg->socket,STDOUT_FILENO);
+									execl(cfg->php_cgi_path.c_str(),cfg->php_cgi_binary.c_str(),0);
+								}
+							}
+						}
+					}
+
+					if ((unsafe) || (!is_safe_path(root,std::string(s)))) { 
 						char buf[128];
 						sprintf(buf,"HTTP/1.1 200 OK\nContent-length: %d\nContent-Type: %s\n\n404 doesnt exist:)",18,"text/plain");
 						send(cfg->socket,&buf,strlen(buf),0);
 						return parse_result_bad_path;
 					}
+
 
 					if (!xfer_stream(cfg,std::string(root + "/" + s).c_str()))
 						return parse_result_unk_error;
@@ -259,15 +306,43 @@ namespace web_server_private {
 			}
 
 			//Just GET / indicates index access
-			if (file_exists(root+"/index.htm")) { 
-				if (!xfer_stream(cfg,std::string(root+"/index.htm").c_str()))
-					return parse_result_unk_error;
+			static const char* entry_point[] = {
+				"/index.htm",
+				"/index.html",
+				"/main.html",
+				0
+			};
+
+			if ((!cfg->php_cgi_binary.empty()) && (!cfg->php_cgi_path.empty()) && file_exists(root + "/index.php")
+				&& file_exists(cfg->php_cgi_path + "/" + cfg->php_cgi_binary)) { 
+				{
+					char buf[128];
+					sprintf(buf,"HTTP/1.1 200 OK\nConnection: close\n");
+					send(cfg->socket,&buf,strlen(buf),0);
+				}
+	
+				std::string arg = "SCRIPT_FILENAME=" + root + "/index.php";
+				put_env("GATEWAY_INTERFACE=CGI/1.1");
+				put_env(arg.c_str());
+				put_env("QUERY_STRING=");
+				put_env("REDIRECT_STATUS=true");
+				put_env("REQUEST_METHOD=GET");
+				put_env("SERVER_PROTOCOL=HTTP/1.1");
+				put_env("REMOTE_HOST=127.0.0.1");
+				dup2(cfg->socket,STDOUT_FILENO);
+				execl(cfg->php_cgi_path.c_str(),cfg->php_cgi_binary.c_str(),0);
 
 				return parse_result_ok;
-			} else if (file_exists(root+"/index.html")) {	
-				if (!xfer_stream(cfg,std::string(root+"/index.html").c_str()))
-					return parse_result_unk_error;
-				return parse_result_ok;
+			} 
+
+			for (uint32_t i = 0;entry_point[i] != 0;++i) {
+				const std::string fn = root+std::string(entry_point[i]);
+				if (file_exists(fn)) { 
+					if (!xfer_stream(cfg,std::string(fn).c_str()))
+						return parse_result_unk_error;
+
+					return parse_result_ok;
+				} 
 			}
 		}
 
@@ -301,6 +376,8 @@ class web_server_c {
 	std::vector<web_server_private::mt_args_t> m_thread_args;
 	std::string m_root;
 	std::string m_error_string;
+	std::string m_php_cgi_binary;
+	std::string m_php_cgi_path;
 	web_server_private::server_config_ctx_t m_server_cfg;
 
 	template <typename base_t>
@@ -337,16 +414,14 @@ class web_server_c {
 			return false;
 
 		web_server_private::client_session_ctx_t* cfg = new web_server_private::client_session_ctx_t();
-
-	
 		cfg->sin_len = sizeof(struct sockaddr_in);
 		cfg->socket = accept(m_server_cfg.socket,(struct sockaddr*)&cfg->addr,&cfg->sin_len);
+		cfg->php_cgi_binary = m_php_cgi_binary;
+		cfg->php_cgi_path = m_php_cgi_path;
 
 		if (!m_silent)
 			std::cout << "New connection:" << inet_ntoa(cfg->addr.sin_addr)  << std::endl;
 
-
-		
 		if (m_nb_threads < 2) {
 			web_server_private::parse_request(m_root,cfg);
 			close(cfg->socket);
@@ -362,13 +437,37 @@ class web_server_c {
 				}
 			}
 
-
 			web_server_private::parse_request(m_root,cfg);
 			close(cfg->socket);
 			delete cfg;
 		}
 
 		return m_initialized;
+	}
+
+	bool init_php(const std::string php_cgi_binary,const std::string& php_cgi_path) {
+		if (!m_initialized) {
+			m_error_string = "init_php : Call init() first\n";
+			return false;
+		}
+
+		m_php_cgi_binary = php_cgi_binary;
+		m_php_cgi_path = php_cgi_path;
+
+		if (!m_php_cgi_path.empty()) {
+			if (m_php_cgi_path[m_php_cgi_path.length()-1] == '/')
+				m_php_cgi_path = m_php_cgi_path.substr(0,m_php_cgi_path.length()-1);
+		}
+
+		if (!web_server_private::file_exists(m_php_cgi_path + "/" + m_php_cgi_binary )) {
+			m_error_string = "Php binary not found!\n";
+			m_php_cgi_binary = m_php_cgi_path = "";
+			return false;
+		}
+
+
+
+		return true;
 	}
 
 	bool init(const std::string& work_directory,const int32_t port,const uint32_t nb_threads = 1,const bool silent = false) {
@@ -397,6 +496,12 @@ class web_server_c {
 		m_root = work_directory;
 		m_server_cfg.port = port;
 		m_server_cfg.socket = socket(AF_INET,SOCK_STREAM,0);
+
+		if (!m_root.empty()) {
+			if (m_root[m_root.length()-1] == '/')
+				m_root = m_root.substr(0,m_root.length()-1);
+		}
+
 		if (m_server_cfg.socket == -1) {
 			m_error_string = "m_server_cfg.socket == -1";
 			return false;
