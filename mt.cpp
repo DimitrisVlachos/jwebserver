@@ -19,11 +19,11 @@ uint32_t g_thread_contexts = 0U;
 
 pthread_mutex_t g_mutex;
 
-static void mt_lock_op() {
+void mt_lock_op() {
 	pthread_mutex_lock(&g_mutex);
 }
 
-static void mt_unlock_op() {
+void mt_unlock_op() {
 	pthread_mutex_unlock(&g_mutex);
 }
 
