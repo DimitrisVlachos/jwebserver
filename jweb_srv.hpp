@@ -156,7 +156,7 @@ namespace web_server_private {
 			return 0;
 		}
 
-    	len = st.st_size;
+    	        len = st.st_size;
 
  
 		{
@@ -275,7 +275,7 @@ namespace web_server_private {
 										sprintf(buf,"HTTP/1.1 200 OK\nConnection: close\n");
 										send(cfg->socket,&buf,strlen(buf),0);
 									}
-									if (mt) mt_lock_op();
+									
 									
 									put_env("GATEWAY_INTERFACE=CGI/1.1");
 									put_env(arg.c_str());
@@ -286,7 +286,7 @@ namespace web_server_private {
 									put_env("REMOTE_HOST=127.0.0.1");
 									dup2(cfg->socket,STDOUT_FILENO);
 									execl(cfg->php_cgi_path.c_str(),cfg->php_cgi_binary.c_str(),0);
-									if (mt) mt_unlock_op();
+									
 								}
 							}
 						}
@@ -323,7 +323,7 @@ namespace web_server_private {
 					send(cfg->socket,&buf,strlen(buf),0);
 				}
 	
-				if (mt) mt_lock_op();
+				
 				std::string arg = "SCRIPT_FILENAME=" + root + "/index.php";
 				put_env("GATEWAY_INTERFACE=CGI/1.1");
 				put_env(arg.c_str());
@@ -334,7 +334,7 @@ namespace web_server_private {
 				put_env("REMOTE_HOST=127.0.0.1");
 				dup2(cfg->socket,STDOUT_FILENO);
 				execl(cfg->php_cgi_path.c_str(),cfg->php_cgi_binary.c_str(),0);
-				if (mt) mt_unlock_op();
+				
 
 				return parse_result_ok;
 			} 
@@ -395,7 +395,7 @@ class web_server_c {
 	template <typename base_t>
 	inline std::string n_to_s(base_t n) {
 		std::ostringstream strm;
-     	strm << n;
+     	        strm << n;
 		return strm.str();
 	}
 
@@ -452,6 +452,12 @@ class web_server_c {
 	bool init_php(const std::string php_cgi_binary,const std::string& php_cgi_path) {
 		if (!m_initialized) {
 			m_error_string = "init_php : Call init() first\n";
+			return false;
+		}
+
+		if (m_nb_threads != 1) {
+			m_error_string = "init_php : PHP scripts cannot be used when nb_threads > 1\n";
+			m_php_cgi_binary = m_php_cgi_path = "";
 			return false;
 		}
 
