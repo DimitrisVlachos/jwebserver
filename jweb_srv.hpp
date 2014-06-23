@@ -371,7 +371,7 @@ namespace web_server_private {
 class web_server_c {
 	private:
 	bool m_initialized,m_silent;
-	uint32_t m_nb_threads,m_nb_active_threads;
+	uint32_t m_nb_threads;
 
 	std::vector<web_server_private::mt_args_t> m_thread_args;
 	std::string m_root;
@@ -491,7 +491,6 @@ class web_server_c {
 			mt_init(nb_threads);			
 		}
 
-		m_nb_active_threads = 0;
 		m_nb_threads = nb_threads;
 		m_root = work_directory;
 		m_server_cfg.port = port;
@@ -542,6 +541,15 @@ class web_server_c {
 			m_error_string = "shutdown() called without previous successful init()";
 			return;
 		}
+
+		if (m_nb_threads > 1) {
+			for (uint32_t i = 0;i < m_nb_threads;++i) {
+				web_server_private::mt_args_t* args = &m_thread_args[i];
+				while (mt_stat_idle != mt_rd_stat(args->id)) {
+				}
+			}		
+		}
+
 		mt_shutdown();
 		close(m_server_cfg.socket);
 		m_initialized = false;
