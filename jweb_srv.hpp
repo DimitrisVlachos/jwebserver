@@ -1,7 +1,7 @@
 
 /*
 
-	Description : Simple multithreaded web server app in C++ (for educational porpuses only)
+	Description     : Simple multithreaded web server app in C++ (for educational porpuses only)
 	Author		: Dimitris Vlachos (DimitrisV22@gmail.com) (http://github.com/DimitrisVlachos)
 	Date		: 22/6/2014
 	Instructions:
@@ -51,7 +51,6 @@ namespace web_server_private {
 
 	struct mt_args_t {
 		uint32_t id;
-		uint32_t running;
 		std::string root;
 		web_server_private::client_session_ctx_t* cfg;
 	};
@@ -170,11 +169,7 @@ namespace web_server_private {
 			fread(buf,1,k,f);
 			send(cfg->socket,&buf,k,0);
 		}
- 
- 		{
-			sprintf(buf,"HTTP/1.1 200 OK\r\nConnection: close\r\n");
-			send(cfg->socket,&buf,strlen(buf),0);
-		}
+
 		fclose(f);
 		return true;
 	}
@@ -256,18 +251,18 @@ namespace web_server_private {
 					return parse_result_ok;
 				}
 			}
-		}
 
-		//Just GET / indicates index access
-		if (file_exists(root+"/index.htm")) { 
-			if (!xfer_stream(cfg,std::string(root+"/index.htm").c_str()))
-				return parse_result_unk_error;
+			//Just GET / indicates index access
+			if (file_exists(root+"/index.htm")) { 
+				if (!xfer_stream(cfg,std::string(root+"/index.htm").c_str()))
+					return parse_result_unk_error;
 
-			return parse_result_ok;
-		} else if (file_exists(root+"/index.html")) {	
-			if (!xfer_stream(cfg,std::string(root+"/index.html").c_str()))
-				return parse_result_unk_error;
-			return parse_result_ok;
+				return parse_result_ok;
+			} else if (file_exists(root+"/index.html")) {	
+				if (!xfer_stream(cfg,std::string(root+"/index.html").c_str()))
+					return parse_result_unk_error;
+				return parse_result_ok;
+			}
 		}
 
 
@@ -284,9 +279,7 @@ namespace web_server_private {
 		web_server_private::parse_request(args->root,args->cfg);
 		close(args->cfg->socket);
 		delete args->cfg;
-		mt_lock_op();
-		args->running = 0;
-		mt_unlock_op();
+		mt_wr_stat(args->id,mt_stat_idle);
 #ifdef DEBUG_THREADS
 		printf("Leave thread %u\n",args->id);
 #endif
@@ -355,11 +348,9 @@ class web_server_c {
 		} else {
 			for (uint32_t i = 0;i < m_nb_threads;++i) {
 				web_server_private::mt_args_t* args = &m_thread_args[i];
-				if (0 == args->running) {
-					args->running = 1;
-
+				if (mt_stat_idle == mt_rd_stat(args->id)) {
+					mt_wr_stat(args->id,mt_stat_busy);
 					args->cfg = cfg;
-			
 					mt_call_thread(web_server_private::thread_entry_point,args,i);
 					return m_initialized;
 				}
