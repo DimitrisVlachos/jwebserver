@@ -143,7 +143,7 @@ namespace web_server_private {
 		uint64_t len;
 		struct stat64 st;
 
-		fd = fd = open64(file_content,O_RDONLY);
+		fd =  open64(file_content,O_RDONLY);
 		if (fd < 0) {
 			std::cout << "Cant open " << file_content << std::endl;
 			return false;
