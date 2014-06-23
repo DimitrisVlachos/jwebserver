@@ -21,8 +21,6 @@ struct mt_extent_t {
     mt_extent_t(const uint32_t in_s0,const uint32_t in_s1) : s0(in_s0) , s1(in_s1) {}
 };
 
-void mt_lock_op();
-void mt_unlock_op();
 bool mt_calculate_extent(std::vector<mt_extent_t>& result,const uint32_t slice_len,const uint32_t thread_count);
 bool mt_init(const uint32_t thread_count);
 bool mt_call_thread(void* (entry_point)(void*),void* my_arg,const uint32_t which);
