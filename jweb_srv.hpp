@@ -1,7 +1,7 @@
 
 /*
 
-	Description     : Simple multithreaded web server app in C++ (for educational porpuses only)
+	Description : Simple multithreaded web server app in C++ (for educational porpuses only)
 	Author		: Dimitris Vlachos (DimitrisV22@gmail.com) (http://github.com/DimitrisVlachos)
 	Date		: 22/6/2014
 	Instructions:
@@ -137,20 +137,26 @@ namespace web_server_private {
 	}
  
 	static bool xfer_stream(web_server_private::client_session_ctx_t* cfg,const char* file_content) {
-		FILE* f = fopen(file_content,"rb");
 		char buf[4096];
 		const ext_map_t* ext = file_ext_map_to_media_type(file_content);
-		uint32_t len;
+		int32_t fd;
+		uint64_t len;
+		struct stat64 st;
 
-		if (!f) {
+		fd = fd = open64(file_content,O_RDONLY);
+		if (fd < 0) {
 			std::cout << "Cant open " << file_content << std::endl;
 			return false;
 		}
 
-		
-		fseek(f,0,SEEK_END);
-		len = ftell(f);
-		fseek(f,0,SEEK_SET);
+		if (fstat64(fd,&st) < 0) {
+			std::cout << "fstat64 fail " << file_content << std::endl;
+			close(fd);
+			return 0;
+		}
+
+    	len = st.st_size;
+
  
 		{
 			sprintf(buf,"HTTP/1.1 200 OK\nContent-length: %d\nContent-Type: %s\n\n",len,ext->type);
@@ -166,11 +172,11 @@ namespace web_server_private {
 			else
 				k = j;
 		
-			fread(buf,1,k,f);
+			read(fd,(void*)buf,k);
 			send(cfg->socket,&buf,k,0);
 		}
 
-		fclose(f);
+		close(fd);
 		return true;
 	}
 
@@ -397,7 +403,7 @@ class web_server_c {
 		}
 
 		int32_t opt_data = 1;
-		if (setsockopt(m_server_cfg.socket,SOL_SOCKET,SO_KEEPALIVE,&opt_data,sizeof(int32_t)) == -1) {
+		if (setsockopt(m_server_cfg.socket,SOL_SOCKET,SO_REUSEADDR/*SO_KEEPALIVE*/,&opt_data,sizeof(int32_t)) == -1) {
 			m_error_string = "setsockopt == -1";
 			return false;
 		}
