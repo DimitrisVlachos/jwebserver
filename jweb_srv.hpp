@@ -85,7 +85,7 @@ namespace web_server_private {
 	static const bool directory_exists(const std::string& path)  {
 		struct stat s;
 		int32_t ret = stat(path.c_str(), &s);
-		if(-1 == ret)
+		if (-1 == ret)
 			return false;
 
 		return S_ISDIR(s.st_mode);
@@ -187,7 +187,7 @@ namespace web_server_private {
 		putenv((char*)&tmp[0]);
 	}
 
-	static parse_result_e parse_request(const std::string& root,web_server_private::client_session_ctx_t* cfg) {
+	static parse_result_e parse_request(const std::string& root,web_server_private::client_session_ctx_t* cfg,const bool mt = false) {
 		char* ds;
 		std::vector<char> buffer;
 
@@ -275,6 +275,7 @@ namespace web_server_private {
 										sprintf(buf,"HTTP/1.1 200 OK\nConnection: close\n");
 										send(cfg->socket,&buf,strlen(buf),0);
 									}
+									if (mt) mt_lock_op();
 									
 									put_env("GATEWAY_INTERFACE=CGI/1.1");
 									put_env(arg.c_str());
@@ -285,6 +286,7 @@ namespace web_server_private {
 									put_env("REMOTE_HOST=127.0.0.1");
 									dup2(cfg->socket,STDOUT_FILENO);
 									execl(cfg->php_cgi_path.c_str(),cfg->php_cgi_binary.c_str(),0);
+									if (mt) mt_unlock_op();
 								}
 							}
 						}
@@ -321,6 +323,7 @@ namespace web_server_private {
 					send(cfg->socket,&buf,strlen(buf),0);
 				}
 	
+				if (mt) mt_lock_op();
 				std::string arg = "SCRIPT_FILENAME=" + root + "/index.php";
 				put_env("GATEWAY_INTERFACE=CGI/1.1");
 				put_env(arg.c_str());
@@ -331,6 +334,7 @@ namespace web_server_private {
 				put_env("REMOTE_HOST=127.0.0.1");
 				dup2(cfg->socket,STDOUT_FILENO);
 				execl(cfg->php_cgi_path.c_str(),cfg->php_cgi_binary.c_str(),0);
+				if (mt) mt_unlock_op();
 
 				return parse_result_ok;
 			} 
@@ -357,7 +361,7 @@ namespace web_server_private {
 #ifdef DEBUG_THREADS
 		printf("Enter thread %u\n",args->id);
 #endif
-		web_server_private::parse_request(args->root,args->cfg);
+		web_server_private::parse_request(args->root,args->cfg,true);
 		close(args->cfg->socket);
 		delete args->cfg;
 		mt_wr_stat(args->id,mt_stat_idle);
@@ -423,7 +427,7 @@ class web_server_c {
 			std::cout << "New connection:" << inet_ntoa(cfg->addr.sin_addr)  << std::endl;
 
 		if (m_nb_threads < 2) {
-			web_server_private::parse_request(m_root,cfg);
+			web_server_private::parse_request(m_root,cfg,false);
 			close(cfg->socket);
 			delete cfg;
 		} else {
@@ -437,7 +441,7 @@ class web_server_c {
 				}
 			}
 
-			web_server_private::parse_request(m_root,cfg);
+			web_server_private::parse_request(m_root,cfg,false);
 			close(cfg->socket);
 			delete cfg;
 		}
