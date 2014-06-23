@@ -1,7 +1,6 @@
 #ifndef ___types___hpp___
 #define ___types___hpp___
 
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -18,6 +17,5 @@
 #include <iostream>
 #include <vector>
 #include <sstream>
-
 #include <cassert>
 #endif
